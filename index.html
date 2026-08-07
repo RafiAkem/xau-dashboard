@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>XAU Live · Hermes Paper Trading</title>
+<style>
+  :root { --blue:#2563eb; --slate:#0f172a; --muted:#64748b; --line:#e2e8f0; --bg:#f8fafc; --ok:#16a34a; --bad:#dc2626; --amber:#d97706; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; background:var(--bg); color:var(--slate); }
+  header { padding:14px 16px; background:#fff; border-bottom:1px solid var(--line); display:flex; align-items:center; justify-content:space-between; position:sticky; top:0; z-index:10; }
+  header h1 { font-size:15px; font-weight:700; }
+  header .dot { display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--ok); margin-right:6px; animation:pulse 2s infinite; }
+  @keyframes pulse { 50% { opacity:.35; } }
+  header #upd { font-size:11px; color:var(--muted); }
+  #chart { height:52vh; background:#fff; border-bottom:1px solid var(--line); }
+  main { padding:14px 16px; display:grid; gap:12px; max-width:720px; margin:0 auto; }
+  .card { background:#fff; border:1px solid var(--line); border-radius:10px; padding:14px; }
+  .card h2 { font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); margin-bottom:10px; }
+  .price { font-size:30px; font-weight:800; letter-spacing:-.02em; }
+  .chg { font-size:14px; font-weight:600; margin-top:2px; }
+  .up { color:var(--ok); } .down { color:var(--bad); }
+  .rows { display:grid; gap:7px; font-size:14px; }
+  .row { display:flex; justify-content:space-between; align-items:center; }
+  .row .k { color:var(--muted); }
+  .row .v { font-weight:600; font-variant-numeric:tabular-nums; }
+  .badge { display:inline-block; padding:2px 10px; border-radius:999px; font-size:12px; font-weight:700; }
+  .b-buy { background:#dcfce7; color:var(--ok); } .b-sell { background:#fee2e2; color:var(--bad); }
+  .b-wait { background:#fef3c7; color:var(--amber); }
+  .b-out-sl { background:#fee2e2; color:var(--bad); } .b-out-tp { background:#dcfce7; color:var(--ok); }
+  .b-out { background:#f1f5f9; color:var(--muted); }
+  .tt { font-size:11px; color:var(--muted); font-variant-numeric:tabular-nums; }
+  .hist-item { border-top:1px solid var(--line); padding-top:8px; display:grid; gap:5px; }
+  .hist-item:first-of-type { border-top:none; padding-top:0; }
+  .empty { color:var(--muted); font-size:13px; padding:6px 0; }
+  .btn { width:100%; margin-top:10px; padding:10px; border:1px solid var(--line); border-radius:10px; background:#fff; color:var(--blue); font-weight:600; font-size:13px; cursor:pointer; }
+  .btn:active { background:#eff6ff; }
+  .err { color:var(--bad); font-size:12px; }
+  footer { text-align:center; color:var(--muted); font-size:11px; padding:18px 0 30px; }
+</style>
+</head>
+<body>
+<header>
+  <h1><span class="dot"></span>XAU Live · Paper Trading</h1>
+  <span id="upd">memuat…</span>
+</header>
+
+<div id="chart"></div>
+<div style="padding:6px 16px;font-size:11px;color:#64748b;background:#fff;border-bottom:1px solid #e2e8f0">Chart = spot emas (TVC:GOLD) · sinyal &amp; entry = futures GC=F (Yahoo, ±$50 basis) · data panel refresh ±4 mnt</div>
+
+<main>
+  <section class="card">
+    <h2>Harga Emas (XAU/USD)</h2>
+    <div class="price" id="px">—</div>
+    <div class="chg" id="chg">—</div>
+    <div class="rows" style="margin-top:10px"><div class="row"><span class="k">Rentang 52&nbsp;mgg</span><span class="v" id="r52">—</span></div></div>
+  </section>
+
+  <section class="card">
+    <h2>Posisi Paper</h2>
+    <div id="paper" class="rows"><div class="empty">memuat…</div></div>
+  </section>
+
+  <section class="card">
+    <h2>Kontrol</h2>
+    <div class="rows"><div class="row"><span class="k">Status paper</span><span class="v"><span class="badge b-wait" id="ctlbadge">—</span></span></div></div>
+    <button class="btn" id="ctltoggle" onclick="toggleCtl()">⋯</button>
+    <div class="tt" style="margin-top:6px">Kill-switch: pause/resume pengambilan posisi paper dari dashboard.</div>
+  </section>
+
+  <section class="card">
+    <h2>Riwayat Paper Trade</h2>
+    <div id="hist" class="rows"><div class="empty">memuat…</div></div>
+  </section>
+
+  <section class="card">
+    <h2>Sinyal Terakhir</h2>
+    <div id="sig" class="rows"><div class="empty">memuat…</div></div>
+  </section>
+
+  <section class="card">
+    <h2>Makro</h2>
+    <div id="macro" class="rows"><div class="empty">memuat…</div></div>
+  </section>
+
+  <button class="btn" onclick="loadState(true)">↻ Perbarui</button>
+</main>
+
+<footer>Hermes Trading Analyzer · data sinyal diperbarui tiap ±5 menit · chart realtime</footer>
+
+<!-- TradingView chart widget (free embed, realtime) -->
+<script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
+<script>
+new TradingView.widget({
+  "autosize": true,
+  "symbol": "TVC:GOLD",
+  "interval": "15",
+  "timezone": "Asia/Jakarta",
+  "theme": "light",
+  "style": "1",
+  "locale": "id_ID",
+  "backgroundColor": "#ffffff",
+  "gridColor": "#eef2f7",
+  "allow_symbol_change": true,
+  "details": false,
+  "hotlist": false,
+  "calendar": false,
+  "studies": ["STD;RSI"],
+  "container_id": "chart"
+});
+</script>
+
+<script>
+const fmt = n => (n==null ? "—" : Number(n).toLocaleString("id-ID", {maximumFractionDigits:2}));
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const CACHE_BUST = Date.now();
+const SU = "https://hcsajwxhsmwbxjdfkjkr.supabase.co/rest/v1/paper_ctl?id=eq.1";
+const SU_KEY = "sb_publishable_ALWlbuNQPkqYjzfg_BW02w_yTD21Slw";
+
+async function toggleCtl() {
+  const btn = document.getElementById("ctltoggle");
+  const paused = document.getElementById("ctlbadge").textContent === "PAUSED";
+  btn.disabled = true; btn.textContent = "memproses…";
+  try {
+    await fetch(SU, {
+      method: "PATCH",
+      headers: { "apikey": SU_KEY, "Authorization": "Bearer " + SU_KEY,
+                 "Content-Type": "application/json", "Prefer": "return=minimal" },
+      body: JSON.stringify({ enabled: paused }) // PAUSED → enable; AKTIF → pause
+    });
+  } catch (e) { alert("Gagal: " + e.message); }
+  btn.disabled = false;
+  loadState(true); // re-render immediately from the live Supabase flag
+}
+
+const SU_STATE = "https://hcsajwxhsmwbxjdfkjkr.supabase.co/rest/v1/dash_state?select=payload&id=eq.1";
+
+async function loadState(manual) {
+  if (manual) document.getElementById("upd").textContent = "memperbarui…";
+  try {
+    let s;
+    try { // live state lives in Supabase now (Vercel free cap: 100 deploys/day)
+      const a = await fetch(SU_STATE, { headers: { "apikey": SU_KEY, "Authorization": "Bearer " + SU_KEY } }).then(r => r.json());
+      s = a && a[0] ? a[0].payload : null;
+    } catch (e) { s = null; }
+    if (!s) { // fallback: stale same-origin copy from the last successful deploy
+      const r = await fetch("state.json?t=" + CACHE_BUST);
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      s = await r.json();
+    }
+    document.getElementById("upd").textContent = "update: " + esc(s.updated_at);
+
+    // gold price
+    if (s.gold && s.gold.price != null) {
+      document.getElementById("px").textContent = "$" + fmt(s.gold.price);
+      const p = s.gold.price, prev = s.gold.prev || p;
+      const ch = (p - prev) / prev * 100;
+      const el = document.getElementById("chg");
+      el.textContent = (ch >= 0 ? "+" : "") + ch.toFixed(2) + "% hari ini";
+      el.className = "chg " + (ch >= 0 ? "up" : "down");
+      document.getElementById("r52").textContent = "$" + fmt(s.gold.low52) + " – $" + fmt(s.gold.high52);
+    }
+
+    // paper position
+    const paper = document.getElementById("paper");
+    const pos = s.paper && s.paper.position;
+    if (!s.paper) { paper.innerHTML = '<div class="empty">—</div>'; }
+    else if (!pos) { paper.innerHTML = '<div class="empty">Tidak ada posisi terbuka</div>'; }    else {
+      const b = pos.dir === "BUY" ? '<span class="badge b-buy">BUY</span>' : '<span class="badge b-sell">SELL</span>';
+      const stt = pos.status === "filled" ? '<span class="badge b-buy">FILLED</span>'
+                : pos.status === "pending" ? '<span class="badge b-wait">PENDING</span>'
+                : esc(pos.status);
+      paper.innerHTML =
+        '<div class="row"><span class="k">Arah</span><span class="v">' + b + '</span></div>' +
+        '<div class="row"><span class="k">Status</span><span class="v">' + stt + '</span></div>' +
+        '<div class="row"><span class="k">Entry</span><span class="v">$' + fmt(pos.entry) + '</span></div>' +
+        '<div class="row"><span class="k">Stop Loss</span><span class="v" style="color:var(--bad)">$' + fmt(pos.stop) + '</span></div>' +
+        '<div class="row"><span class="k">Take Profit</span><span class="v" style="color:var(--ok)">$' + fmt(pos.target) + '</span></div>' +
+        '<div class="row"><span class="k">Balance</span><span class="v">$' + fmt(s.paper.balance) + '</span></div>' +
+        '<div class="row"><span class="k">Trade selesai</span><span class="v">' + (s.paper.trades||0) + '</span></div>';
+    }
+
+    // realized P&L summary
+    const sm = s.paper && s.paper.summary;
+    if (sm) {
+      paper.innerHTML +=
+        '<div class="row" style="border-top:1px solid var(--line);padding-top:8px;margin-top:4px"><span class="k">Total P&amp;L (realized)</span><span class="v" style="color:' + (sm.realized>=0?"var(--ok)":"var(--bad)") + '">' + (sm.realized>=0?"+":"") + fmt(sm.realized) + '</span></div>' +
+        '<div class="row"><span class="k">TP / SL / EXP</span><span class="v">' + sm.tp + ' / ' + sm.sl + ' / ' + sm.exp + '</span></div>';
+    }
+
+    // control (kill switch) — read the LIVE remote flag (Supabase), not the
+    // throttled state.json, so a toggle reflects instantly
+    const liveOn = await fetch(SU, { headers: { "apikey": SU_KEY, "Authorization": "Bearer " + SU_KEY } })
+      .then(r => r.json()).then(a => a && a[0] ? a[0].enabled !== false : null).catch(() => null);
+    const on = liveOn !== null ? liveOn : (s.paper && s.paper.enabled !== false);
+    const ctl = document.getElementById("ctlbadge");
+    ctl.className = "badge " + (on ? "b-buy" : "b-sell");
+    ctl.textContent = on ? "AKTIF" : "PAUSED";
+    document.getElementById("ctltoggle").textContent = on ? "⏸ Pause trading" : "▶ Resume trading";
+
+    // history
+    const hist = document.getElementById("hist");
+    const h = s.paper && s.paper.history;
+    if (!h || !h.length) { hist.innerHTML = '<div class="empty">Belum ada trade selesai</div>'; }
+    else {
+      const fmtT = t => { const d = new Date((t||0)*1000); return isNaN(d) ? "" : `${String(d.getDate()).padStart(2,"0")}/${String(d.getMonth()+1).padStart(2,"0")} ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`; };
+      const out = o => o==="TP" ? '<span class="badge b-out-tp">TP</span>'
+                  : o==="SL" ? '<span class="badge b-out-sl">SL</span>'
+                  : '<span class="badge b-out">'+esc(o)+'</span>';
+      const dir = d => d==="BUY" ? '<span class="badge b-buy">BUY</span>' : '<span class="badge b-sell">SELL</span>';
+      hist.innerHTML = [...h].reverse().map(t =>
+        '<div class="hist-item">' +
+          '<div class="row"><span class="k">' + dir(t.dir) + ' ' + esc(t.sig_id||"") + '</span><span class="v tt">' + fmtT(t.closed_at||t.ts) + '</span></div>' +
+          '<div class="row"><span class="k">Entry</span><span class="v">$' + fmt(t.entry) + ' <span class="tt">(SL $'+fmt(t.stop)+' / TP $'+fmt(t.target)+')</span></span></div>' +
+          '<div class="row"><span class="k">Hasil</span><span class="v">' + out(t.outcome) + ' &nbsp; P&L <span style="color:' + ((t.pnl||0)>=0?"var(--ok)":"var(--bad)") + '">' + (t.pnl>=0?"+":"") + fmt(t.pnl) + '</span></span></div>' +
+        '</div>').join("");
+    }
+
+    // signal
+    const sig = document.getElementById("sig");
+    if (!s.signal) { sig.innerHTML = '<div class="empty">Belum ada sinyal</div>'; }
+    else {
+      const b = s.signal.bias === "BUY" ? '<span class="badge b-buy">BUY</span>' : '<span class="badge b-sell">SELL</span>';
+      sig.innerHTML =
+        '<div class="row"><span class="k">Bias</span><span class="v">' + b + '</span></div>' +
+        '<div class="row"><span class="k">Entry</span><span class="v">$' + fmt(s.signal.entry) + '</span></div>' +
+        '<div class="row"><span class="k">SL / TP</span><span class="v">$' + fmt(s.signal.stop) + ' / $' + fmt(s.signal.target) + '</span></div>';
+    }
+
+    // macro
+    const macro = document.getElementById("macro");
+    if (s.macro && s.macro.real_yield_10y) {
+      macro.innerHTML =
+        '<div class="row"><span class="k">Real Yield 10Y (TIPS)</span><span class="v">' + esc(s.macro.real_yield_10y) + '%</span></div>' +
+        '<div class="row"><span class="k">Tanggal</span><span class="v">' + esc(s.macro.date) + '</span></div>';
+    } else { macro.innerHTML = '<div class="empty">—</div>'; }
+  } catch (e) {
+    document.getElementById("upd").textContent = "gagal muat data";
+    document.getElementById("paper").innerHTML = '<div class="err">Error: ' + esc(e.message) + '</div>';
+  }
+}
+loadState(false);
+setInterval(loadState, 60000);
+</script>
+</body>
+</html>
